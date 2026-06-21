@@ -1,4 +1,4 @@
-import type {Card} from "./card";
+import type {Card, Suit} from "./card";
 
 export type Seat = 1 | 2 | 3;
 
@@ -59,6 +59,8 @@ export type GameView = {
   trickCount: number;
   totalTricks: number;
   lastTrick: {winnerSeat: Seat; points: number} | null;
+  trump: Suit | null;
+  lastMeld: {seat: Seat; suit: Suit; points: number} | null;
   contract: {declarerSeat: Seat; value: number} | null;
   bidding: BiddingView | null;
   musik: MusikView | null;

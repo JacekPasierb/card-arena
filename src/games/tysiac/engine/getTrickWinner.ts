@@ -1,4 +1,4 @@
-import type {Card} from "../types/card";
+import type {Card, Suit} from "../types/card";
 
 const rankPower: Record<Card["rank"], number> = {
   "9": 1,
@@ -9,14 +9,21 @@ const rankPower: Record<Card["rank"], number> = {
   A: 6,
 };
 
-export function getTrickWinner(cards: Card[]) {
+export function getTrickWinner(cards: Card[], trump?: Suit | null) {
   if (cards.length !== 3) return null;
 
   const leadSuit = cards[0].suit;
 
-  const sameSuitCards = cards.filter((card) => card.suit === leadSuit);
+  const trumpCards = trump
+    ? cards.filter((card) => card.suit === trump)
+    : [];
 
-  return sameSuitCards.reduce((highestCard, currentCard) => {
+  const pool =
+    trumpCards.length > 0
+      ? trumpCards
+      : cards.filter((card) => card.suit === leadSuit);
+
+  return pool.reduce((highestCard, currentCard) => {
     return rankPower[currentCard.rank] > rankPower[highestCard.rank]
       ? currentCard
       : highestCard;

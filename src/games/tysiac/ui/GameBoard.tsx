@@ -1,6 +1,7 @@
 "use client";
 
 import {useState} from "react";
+import type {Suit} from "../types/card";
 import type {GamePublicPlayer, Seat} from "../types/game";
 import {giveCard, newRound, placeBid, playCard, useGame} from "../net/useGame";
 import {CardView} from "./CardView";
@@ -8,6 +9,20 @@ import {CardView} from "./CardView";
 type GameBoardProps = {
   code: string;
   roomName: string;
+};
+
+const SUIT_SYMBOL: Record<Suit, string> = {
+  hearts: "♥",
+  diamonds: "♦",
+  clubs: "♣",
+  spades: "♠",
+};
+
+const SUIT_LABEL: Record<Suit, string> = {
+  hearts: "kier",
+  diamonds: "karo",
+  clubs: "trefl",
+  spades: "pik",
 };
 
 function OpponentArea({
@@ -148,6 +163,22 @@ export function GameBoard({code, roomName}: GameBoardProps) {
           <p className="text-sm text-gray-300">
             Lewa: {view.trickCount}/{view.totalTricks}
           </p>
+          <p className="text-sm text-gray-300">
+            Atut:{" "}
+            {view.trump ? (
+              <span
+                className={
+                  view.trump === "hearts" || view.trump === "diamonds"
+                    ? "text-red-400"
+                    : "text-white"
+                }
+              >
+                {SUIT_SYMBOL[view.trump]} {SUIT_LABEL[view.trump]}
+              </span>
+            ) : (
+              "brak"
+            )}
+          </p>
           {view.contract && (
             <p className="text-sm text-emerald-300">
               Gra: {playerBySeat(view.contract.declarerSeat)?.name} za{" "}
@@ -263,6 +294,15 @@ export function GameBoard({code, roomName}: GameBoardProps) {
                 {playerBySeat(view.musik.declarerSeat)?.name} wymienia karty…
               </p>
             )}
+          </div>
+        )}
+
+        {view.lastMeld && (
+          <div className="absolute left-1/2 top-[20%] -translate-x-1/2 rounded-xl border border-yellow-400 bg-yellow-500/15 px-5 py-2 text-center">
+            <p className="font-bold text-yellow-300">
+              Meldunek {SUIT_SYMBOL[view.lastMeld.suit]}{" "}
+              {playerBySeat(view.lastMeld.seat)?.name} +{view.lastMeld.points}
+            </p>
           </div>
         )}
 

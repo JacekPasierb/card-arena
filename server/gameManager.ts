@@ -41,6 +41,8 @@ type Game = {
   leadSeat: Seat;
   trickCount: number;
   lastTrick: {winnerSeat: Seat; points: number} | null;
+  trump: Suit | null;
+  lastMeld: {seat: Seat; suit: Suit; points: number} | null;
 };
 
 const games = new Map<string, Game>();
@@ -110,6 +112,8 @@ export function startGame(room: Room): Game {
     leadSeat: opener,
     trickCount: 0,
     lastTrick: null,
+    trump: null,
+    lastMeld: null,
   };
 
   games.set(room.code, game);
@@ -281,7 +285,7 @@ function allowedCardIds(game: Game, seat: Seat): string[] {
   const leadCard = game.table[0]?.card;
 
   return player.hand
-    .filter((card) => isCardAllowed(card, player.hand, leadCard))
+    .filter((card) => isCardAllowed(card, player.hand, leadCard, game.trump))
     .map((card) => card.id);
 }
 
@@ -302,17 +306,37 @@ export function playCard(code: string, seat: Seat, cardId: string): boolean {
   if (!card) return false;
 
   const leadCard = game.table[0]?.card;
-  if (!isCardAllowed(card, player.hand, leadCard)) return false;
+  if (!isCardAllowed(card, player.hand, leadCard, game.trump)) return false;
+
+  const isLeading = game.table.length === 0;
 
   player.hand = player.hand.filter((current) => current.id !== cardId);
   game.table.push({seat, card});
+
+  // Meldunek: wyj\u015bcie kr\u00f3lem lub dam\u0105, gdy w r\u0119ku zostaje partner z pary.
+  if (isLeading && (card.rank === "K" || card.rank === "Q")) {
+    const partnerRank = card.rank === "K" ? "Q" : "K";
+    const hasPartner = player.hand.some(
+      (current) => current.suit === card.suit && current.rank === partnerRank
+    );
+
+    if (hasPartner) {
+      game.trump = card.suit;
+      const points = MARRIAGE[card.suit];
+      player.trickPoints += points;
+      game.lastMeld = {seat, suit: card.suit, points};
+    }
+  }
 
   if (game.table.length < 3) {
     game.currentTurnSeat = nextSeat(seat);
     return true;
   }
 
-  const winnerCard = getTrickWinner(game.table.map((entry) => entry.card));
+  const winnerCard = getTrickWinner(
+    game.table.map((entry) => entry.card),
+    game.trump
+  );
   const winnerEntry = game.table.find(
     (entry) => entry.card.id === winnerCard?.id
   );
@@ -340,6 +364,7 @@ export function finalizeTrick(code: string): boolean {
   game.trickCount += 1;
   game.leadSeat = game.lastTrick.winnerSeat;
   game.currentTurnSeat = game.lastTrick.winnerSeat;
+  game.lastMeld = null;
 
   game.phase = game.trickCount >= TOTAL_TRICKS ? "roundOver" : "playing";
   return true;
@@ -354,8 +379,27 @@ export function botPlay(code: string): boolean {
   const leadCard = game.table[0]?.card;
 
   const allowed = player.hand.filter((card) =>
-    isCardAllowed(card, player.hand, leadCard)
+    isCardAllowed(card, player.hand, leadCard, game.trump)
   );
+
+  // Przy wyj\u015bciu bot ch\u0119tnie melduje: zagrywa kr\u00f3la z najcenniejszej pary K+Q.
+  if (game.table.length === 0) {
+    const meldSuit = (Object.keys(MARRIAGE) as Suit[])
+      .filter(
+        (suit) =>
+          player.hand.some((c) => c.suit === suit && c.rank === "K") &&
+          player.hand.some((c) => c.suit === suit && c.rank === "Q")
+      )
+      .sort((a, b) => MARRIAGE[b] - MARRIAGE[a])[0];
+
+    if (meldSuit) {
+      const king = player.hand.find(
+        (c) => c.suit === meldSuit && c.rank === "K"
+      );
+      if (king) return playCard(code, seat, king.id);
+    }
+  }
+
   const choice = allowed[0] ?? player.hand[0];
   if (!choice) return false;
 
@@ -389,6 +433,8 @@ export function startNewRound(code: string): boolean {
   game.leadSeat = opener;
   game.trickCount = 0;
   game.lastTrick = null;
+  game.trump = null;
+  game.lastMeld = null;
 
   return true;
 }
@@ -423,6 +469,8 @@ export function buildView(code: string, viewerId?: string): GameView | null {
     trickCount: game.trickCount,
     totalTricks: TOTAL_TRICKS,
     lastTrick: game.lastTrick,
+    trump: game.trump,
+    lastMeld: game.lastMeld,
     contract:
       game.declarerSeat !== null && game.contractValue !== null
         ? {declarerSeat: game.declarerSeat, value: game.contractValue}
