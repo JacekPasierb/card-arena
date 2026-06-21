@@ -1,4 +1,5 @@
 import type {Room, RoomVisibility} from "../../features/rooms/types";
+import type {GameView} from "../../games/tysiac/types/game";
 
 export type PlayerIdentity = {
   id: string;
@@ -28,10 +29,20 @@ export type StartRoomPayload = {
   code: string;
 };
 
+export type PlayCardPayload = {
+  code: string;
+  cardId: string;
+};
+
+export type GameCodePayload = {
+  code: string;
+};
+
 export interface ServerToClientEvents {
   "rooms:update": (rooms: Room[]) => void;
   "room:update": (room: Room) => void;
   "room:closed": () => void;
+  "game:state": (view: GameView) => void;
 }
 
 export interface ClientToServerEvents {
@@ -53,5 +64,17 @@ export interface ClientToServerEvents {
   "room:start": (
     payload: StartRoomPayload,
     ack: (response: Ack<Room>) => void
+  ) => void;
+  "game:subscribe": (
+    payload: GameCodePayload,
+    ack: (response: Ack<GameView>) => void
+  ) => void;
+  "game:play": (
+    payload: PlayCardPayload,
+    ack: (response: Ack<true>) => void
+  ) => void;
+  "game:newRound": (
+    payload: GameCodePayload,
+    ack: (response: Ack<true>) => void
   ) => void;
 }

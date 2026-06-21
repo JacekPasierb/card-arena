@@ -1,11 +1,8 @@
 "use client";
 
 import {useRouter} from "next/navigation";
-import {useEffect, useMemo, useRef} from "react";
-import {createDeck} from "@/games/tysiac/engine/createDeck";
-import {dealCards} from "@/games/tysiac/engine/dealCards";
-import {shuffleDeck} from "@/games/tysiac/engine/shuffleDeck";
-import {GameLayout} from "@/games/tysiac/ui/GameLayout";
+import {useEffect, useRef} from "react";
+import {GameBoard} from "@/games/tysiac/ui/GameBoard";
 import {getLocalPlayer} from "./player";
 import {joinRoom, leaveRoom, startRoom, useRoom} from "./roomStore";
 
@@ -29,11 +26,6 @@ export function RoomView({code}: RoomViewProps) {
   }, [code]);
 
   const isPlaying = room?.status === "playing";
-
-  const dealtCards = useMemo(
-    () => (isPlaying ? dealCards(shuffleDeck(createDeck())) : null),
-    [isPlaying]
-  );
 
   function handleLeave() {
     leaveRoom(code);
@@ -67,8 +59,21 @@ export function RoomView({code}: RoomViewProps) {
     );
   }
 
-  if (isPlaying && dealtCards) {
-    return <GameLayout dealtCards={dealtCards} />;
+  if (isPlaying) {
+    return (
+      <div>
+        <div className="mx-auto max-w-6xl px-4 pt-6">
+          <button
+            type="button"
+            onClick={handleLeave}
+            className="text-sm text-gray-400 transition hover:text-white"
+          >
+            ← Opuść stół
+          </button>
+        </div>
+        <GameBoard code={code} roomName={room.name} />
+      </div>
+    );
   }
 
   const me = room.players.find(

@@ -13,6 +13,22 @@ import {
   removePlayerEverywhere,
   startRoom,
 } from "./roomManager";
+import {
+  botPlay,
+  buildView,
+  convertPlayerToBot,
+  finalizeTrick,
+  getGame,
+  isBotTurn,
+  playCard,
+  removeGame,
+  startGame,
+  startNewRound,
+} from "./gameManager";
+import type {Seat} from "../src/games/tysiac/types/game";
+
+const TRICK_PAUSE_MS = 1600;
+const BOT_DELAY_MS = 850;
 
 type SocketData = {
   playerId?: string;
@@ -45,6 +61,41 @@ function broadcastLobby() {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Wystąpił błąd.";
+}
+
+async function broadcastGame(code: string) {
+  const sockets = await io.in(roomChannel(code)).fetchSockets();
+
+  for (const remote of sockets) {
+    const view = buildView(code, remote.data.playerId);
+    if (view) remote.emit("game:state", view);
+  }
+}
+
+/**
+ * Posuwa gr\u0119 do przodu: rozsy\u0142a stan, finalizuje uko\u0144czone lewy po pauzie
+ * i wykonuje ruchy bot\u00f3w. Wywo\u0142uje si\u0119 rekurencyjnie a\u017c do tury cz\u0142owieka.
+ */
+async function advance(code: string) {
+  await broadcastGame(code);
+
+  const game = getGame(code);
+  if (!game) return;
+
+  if (game.status === "trickComplete") {
+    setTimeout(() => {
+      finalizeTrick(code);
+      void advance(code);
+    }, TRICK_PAUSE_MS);
+    return;
+  }
+
+  if (isBotTurn(game)) {
+    setTimeout(() => {
+      botPlay(code);
+      void advance(code);
+    }, BOT_DELAY_MS);
+  }
 }
 
 io.on("connection", (socket) => {
@@ -97,12 +148,70 @@ io.on("connection", (socket) => {
   socket.on("room:start", (payload, ack) => {
     try {
       const room = startRoom(payload.code);
+      startGame(room);
       ack({ok: true, data: room});
       io.to(roomChannel(room.code)).emit("room:update", room);
       broadcastLobby();
+      void advance(room.code);
     } catch (error) {
       ack({ok: false, error: errorMessage(error)});
     }
+  });
+
+  socket.on("game:subscribe", ({code}, ack) => {
+    if (socket.data.playerId) {
+      socket.join(roomChannel(code.toUpperCase()));
+    }
+
+    const view = buildView(code.toUpperCase(), socket.data.playerId);
+
+    if (!view) {
+      ack({ok: false, error: "Gra nie istnieje."});
+      return;
+    }
+
+    ack({ok: true, data: view});
+  });
+
+  socket.on("game:play", ({code, cardId}, ack) => {
+    const normalized = code.toUpperCase();
+    const game = getGame(normalized);
+
+    if (!game) {
+      ack({ok: false, error: "Gra nie istnieje."});
+      return;
+    }
+
+    const player = game.players.find(
+      (current) => current.id === socket.data.playerId
+    );
+
+    if (!player) {
+      ack({ok: false, error: "Nie jesteś graczem przy tym stole."});
+      return;
+    }
+
+    const moved = playCard(normalized, player.seat as Seat, cardId);
+
+    if (!moved) {
+      ack({ok: false, error: "Nieprawidłowe zagranie."});
+      return;
+    }
+
+    ack({ok: true, data: true});
+    void advance(normalized);
+  });
+
+  socket.on("game:newRound", ({code}, ack) => {
+    const normalized = code.toUpperCase();
+
+    if (!startNewRound(normalized)) {
+      ack({ok: false, error: "Gra nie istnieje."});
+      return;
+    }
+
+    ack({ok: true, data: true});
+    void advance(normalized);
   });
 
   socket.on("room:leave", ({code, playerId}) => {
@@ -111,8 +220,14 @@ io.on("connection", (socket) => {
 
     if (room) {
       io.to(roomChannel(code)).emit("room:update", room);
+
+      if (getGame(code)) {
+        convertPlayerToBot(playerId);
+        void advance(code);
+      }
     } else {
       io.to(roomChannel(code)).emit("room:closed");
+      removeGame(code);
     }
 
     broadcastLobby();
@@ -121,6 +236,12 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     const playerId = socket.data.playerId;
     if (!playerId) return;
+
+    // Je\u015bli gracz jest w trakcie gry \u2014 przejmuje go bot, by gra si\u0119 toczy\u0142a.
+    const gameCodes = convertPlayerToBot(playerId);
+    for (const code of gameCodes) {
+      void advance(code);
+    }
 
     const affected = removePlayerEverywhere(playerId);
 
