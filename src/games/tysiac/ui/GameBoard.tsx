@@ -1,7 +1,7 @@
 "use client";
 
 import {useState} from "react";
-import type {Suit} from "../types/card";
+import type {Card, Rank, Suit} from "../types/card";
 import type {GamePublicPlayer, Seat} from "../types/game";
 import {
   giveCard,
@@ -31,6 +31,32 @@ const SUIT_LABEL: Record<Suit, string> = {
   clubs: "trefl",
   spades: "pik",
 };
+
+// Kolejno\u015b\u0107 grupowania kolor\u00f3w na r\u0119ce.
+const SUIT_ORDER: Record<Suit, number> = {
+  hearts: 0,
+  diamonds: 1,
+  clubs: 2,
+  spades: 3,
+};
+
+// Kolejno\u015b\u0107 rang od najwy\u017cszej do najni\u017cszej.
+const RANK_ORDER: Record<Rank, number> = {
+  A: 0,
+  "10": 1,
+  K: 2,
+  Q: 3,
+  J: 4,
+  "9": 5,
+};
+
+/** Sortuje r\u0119k\u0119: najpierw wg koloru, w obr\u0119bie koloru od najwy\u017cszej karty. */
+function sortHand(cards: Card[]): Card[] {
+  return [...cards].sort((a, b) => {
+    if (a.suit !== b.suit) return SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit];
+    return RANK_ORDER[a.rank] - RANK_ORDER[b.rank];
+  });
+}
 
 function OpponentArea({
   player,
@@ -444,7 +470,7 @@ export function GameBoard({code, roomName}: GameBoardProps) {
           </div>
 
           <div className="flex max-w-[680px] flex-wrap justify-center gap-2">
-            {view.you?.hand.map((card) => {
+            {sortHand(view.you?.hand ?? []).map((card) => {
               const mode = handCardMode(card.id);
 
               return (
