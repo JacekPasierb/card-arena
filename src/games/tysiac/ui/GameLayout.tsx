@@ -230,37 +230,9 @@ const playOpponentCard = useCallback(
   }, [playedCards, isTrickInProgress, finishTrick]);
 
   return (
-    <div className="min-h-screen bg-[#06110f] text-white">
-      <header className="flex h-20 items-center justify-between border-b border-yellow-700/30 bg-black/40 px-8">
-        <h1 className="text-3xl font-bold text-yellow-400">♠ CARD ARENA</h1>
-
-        <nav className="hidden gap-8 md:flex">
-          <span className="text-yellow-400">Graj</span>
-          <span>Rozgrywki</span>
-          <span>Rankingi</span>
-          <span>Statystyki</span>
-          <span>Ligi</span>
-          <span>Turnieje</span>
-        </nav>
-      </header>
-
-      <div className="flex">
-        <aside className="hidden w-64 border-r border-yellow-700/20 bg-black/30 p-6 lg:block">
-          <div className="space-y-4">
-            <button className="w-full rounded-lg bg-emerald-700 px-4 py-4 text-left font-bold">
-              ⚔ Szybka gra
-            </button>
-            <button className="w-full rounded-lg bg-white/5 px-4 py-4 text-left">
-              ▦ Stwórz pokój
-            </button>
-            <button className="w-full rounded-lg bg-white/5 px-4 py-4 text-left">
-              ↪ Dołącz do pokoju
-            </button>
-          </div>
-        </aside>
-
-        <main className="flex-1 p-6">
-          <section className="relative min-h-[900px] overflow-hidden rounded-[40px] border-4 border-yellow-700/60 bg-emerald-950 p-8 shadow-2xl">
+    <div className="mx-auto max-w-6xl px-4 py-6 text-white">
+      <main>
+        <section className="relative min-h-[900px] overflow-hidden rounded-[40px] border-4 border-yellow-700/60 bg-emerald-950 p-8 shadow-2xl">
             <div className="absolute left-8 top-8 rounded-xl border border-yellow-600/40 bg-black/30 p-4">
               <h2 className="font-bold text-yellow-400">STÓŁ #12345</h2>
               <p className="text-sm text-gray-300">Tysiąc • 3 graczy</p>
@@ -396,9 +368,8 @@ const playOpponentCard = useCallback(
                   : "Wybierz kartę"}
               </button>
             </div>
-          </section>
-        </main>
-      </div>
+        </section>
+      </main>
     </div>
   );
 }
