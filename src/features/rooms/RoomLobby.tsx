@@ -2,48 +2,67 @@
 
 import {useRouter} from "next/navigation";
 import {useState} from "react";
+import {getLocalPlayer, setLocalPlayerName} from "./player";
 import {createRoom, joinRoom, useRooms} from "./roomStore";
 
 export function RoomLobby() {
   const router = useRouter();
   const rooms = useRooms();
 
+  const [playerName, setPlayerName] = useState(() => getLocalPlayer().name);
   const [tableName, setTableName] = useState("");
   const [visibility, setVisibility] = useState<"public" | "private">("public");
   const [roomCode, setRoomCode] = useState("");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  function handleCreateRoom() {
-    const room = createRoom({
-      name: tableName,
-      visibility,
-      hostName: "Ty",
-    });
-
-    router.push(`/tysiac/stol/${room.code}`);
+  function commitName() {
+    const updated = setLocalPlayerName(playerName);
+    setPlayerName(updated.name);
   }
 
-  function handleJoinByCode() {
-    const code = roomCode.trim().toUpperCase();
+  async function handleCreateRoom() {
+    commitName();
+    setBusy(true);
+    setError("");
 
+    try {
+      const room = await createRoom({name: tableName, visibility});
+      router.push(`/tysiac/stol/${room.code}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Nie udało się.");
+      setBusy(false);
+    }
+  }
+
+  async function handleJoinByCode() {
+    const code = roomCode.trim().toUpperCase();
     if (!code) return;
 
-    const room = joinRoom(code, {playerName: "Ty"});
-
-    if (!room) {
-      setError("Nie znaleziono stołu o tym kodzie.");
-      return;
-    }
-
+    commitName();
+    setBusy(true);
     setError("");
-    router.push(`/tysiac/stol/${room.code}`);
+
+    try {
+      const room = await joinRoom(code);
+      router.push(`/tysiac/stol/${room.code}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Nie udało się.");
+      setBusy(false);
+    }
   }
 
-  function handleJoinSeat(code: string, seat: 1 | 2 | 3) {
-    const room = joinRoom(code, {playerName: "Ty", seat});
+  async function handleJoinSeat(code: string, seat: 1 | 2 | 3) {
+    commitName();
+    setBusy(true);
+    setError("");
 
-    if (room) {
+    try {
+      const room = await joinRoom(code, {seat});
       router.push(`/tysiac/stol/${room.code}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Nie udało się.");
+      setBusy(false);
     }
   }
 
@@ -53,15 +72,30 @@ export function RoomLobby() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
-      <div className="mb-8">
-        <p className="text-sm font-bold uppercase tracking-[0.2em] text-yellow-400">
-          Tysiąc
-        </p>
-        <h1 className="mt-1 text-4xl font-black">Stoły online</h1>
-        <p className="mt-2 text-gray-300">
-          Stwórz własny stół i zaproś znajomych kodem albo dołącz do gry, która
-          czeka na graczy.
-        </p>
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-sm font-bold uppercase tracking-[0.2em] text-yellow-400">
+            Tysiąc
+          </p>
+          <h1 className="mt-1 text-4xl font-black">Stoły online</h1>
+          <p className="mt-2 text-gray-300">
+            Stwórz stół i zaproś znajomych kodem albo dołącz do gry, która czeka
+            na graczy.
+          </p>
+        </div>
+
+        <div className="w-full sm:w-64">
+          <label className="mb-1 block text-sm text-gray-400">Twój nick</label>
+          <input
+            suppressHydrationWarning
+            value={playerName}
+            onChange={(event) => setPlayerName(event.target.value)}
+            onBlur={commitName}
+            placeholder="Twój nick"
+            maxLength={20}
+            className="w-full rounded-lg border border-yellow-700/40 bg-black/40 px-4 py-2 text-white outline-none placeholder:text-gray-500 focus:border-yellow-400"
+          />
+        </div>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
@@ -97,7 +131,8 @@ export function RoomLobby() {
           <button
             type="button"
             onClick={handleCreateRoom}
-            className="w-full rounded-lg bg-yellow-500 px-6 py-3 font-bold text-black transition hover:bg-yellow-400"
+            disabled={busy}
+            className="w-full rounded-lg bg-yellow-500 px-6 py-3 font-bold text-black transition hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Stwórz i wejdź
           </button>
@@ -125,7 +160,7 @@ export function RoomLobby() {
             <button
               type="button"
               onClick={handleJoinByCode}
-              disabled={!roomCode.trim()}
+              disabled={!roomCode.trim() || busy}
               className="rounded-lg bg-emerald-700 px-6 py-3 font-bold transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Dołącz
@@ -184,10 +219,10 @@ export function RoomLobby() {
                             onClick={() =>
                               handleJoinSeat(room.code, seat as 1 | 2 | 3)
                             }
-                            disabled={isTaken || isFull}
+                            disabled={isTaken || isFull || busy}
                             className="rounded-lg bg-emerald-700 px-4 py-3 text-sm font-bold transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-40"
                           >
-                            {isTaken ? `M${seat}` : `M${seat}`}
+                            M{seat}
                           </button>
                         );
                       })}
