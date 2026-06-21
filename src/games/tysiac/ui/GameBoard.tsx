@@ -3,7 +3,14 @@
 import {useState} from "react";
 import type {Suit} from "../types/card";
 import type {GamePublicPlayer, Seat} from "../types/game";
-import {giveCard, newRound, placeBid, playCard, useGame} from "../net/useGame";
+import {
+  giveCard,
+  newMatch,
+  newRound,
+  placeBid,
+  playCard,
+  useGame,
+} from "../net/useGame";
 import {CardView} from "./CardView";
 
 type GameBoardProps = {
@@ -188,10 +195,19 @@ export function GameBoard({code, roomName}: GameBoardProps) {
         </div>
 
         <div className="absolute right-8 top-8 rounded-xl border border-yellow-600/40 bg-black/30 p-4">
-          <h2 className="mb-2 font-bold text-yellow-400">Wyniki</h2>
+          <h2 className="mb-2 font-bold text-yellow-400">
+            Wyniki / {view.target}
+          </h2>
           {view.players.map((player) => (
             <p key={player.seat} className="text-sm">
-              {player.name}: {player.trickPoints}
+              {player.name}:{" "}
+              <span className="font-bold text-white">{player.matchScore}</span>
+              {player.onBarrel && (
+                <span className="ml-1 text-yellow-300" title="Na beczce">
+                  🛢
+                </span>
+              )}
+              <span className="text-gray-400"> (+{player.trickPoints})</span>
             </p>
           ))}
         </div>
@@ -330,26 +346,85 @@ export function GameBoard({code, roomName}: GameBoardProps) {
           </div>
         )}
 
-        {view.phase === "roundOver" && (
-          <div className="absolute left-1/2 top-[40%] -translate-x-1/2 rounded-2xl border border-yellow-500 bg-black/80 px-8 py-6 text-center shadow-xl">
+        {view.phase === "roundOver" && view.roundResult && (
+          <div className="absolute left-1/2 top-[34%] w-[420px] -translate-x-1/2 rounded-2xl border border-yellow-500 bg-black/85 px-8 py-6 text-center shadow-xl">
             <h2 className="text-2xl font-bold text-yellow-400">
               Koniec rozdania
             </h2>
-            <div className="mt-3 space-y-1">
-              {[...view.players]
-                .sort((a, b) => b.trickPoints - a.trickPoints)
-                .map((player) => (
-                  <p key={player.seat} className="text-gray-200">
-                    {player.name}: {player.trickPoints} pkt
-                  </p>
+
+            <table className="mt-4 w-full text-sm">
+              <tbody>
+                {view.roundResult.rows.map((row) => (
+                  <tr key={row.seat} className="border-b border-white/5">
+                    <td className="py-1 text-left">
+                      {playerBySeat(row.seat)?.name}
+                      {row.isDeclarer && (
+                        <span
+                          className={`ml-1 text-xs ${
+                            row.made ? "text-emerald-300" : "text-red-300"
+                          }`}
+                        >
+                          (gra {row.made ? "wygrana" : "przegrana"})
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-1 text-right text-gray-300">
+                      {row.roundPoints} pkt
+                    </td>
+                    <td
+                      className={`py-1 text-right font-bold ${
+                        row.delta >= 0 ? "text-emerald-300" : "text-red-300"
+                      }`}
+                    >
+                      {row.delta >= 0 ? "+" : ""}
+                      {row.delta}
+                    </td>
+                    <td className="py-1 text-right font-bold text-white">
+                      = {row.total}
+                    </td>
+                  </tr>
                 ))}
-            </div>
+              </tbody>
+            </table>
+
             <button
               type="button"
               onClick={() => newRound(code)}
               className="mt-5 rounded-lg bg-yellow-500 px-6 py-3 font-bold text-black transition hover:bg-yellow-400"
             >
               Nowe rozdanie
+            </button>
+          </div>
+        )}
+
+        {view.phase === "matchOver" && view.winnerSeat && (
+          <div className="absolute left-1/2 top-[34%] w-[420px] -translate-x-1/2 rounded-2xl border-2 border-yellow-400 bg-black/90 px-8 py-8 text-center shadow-2xl">
+            <p className="text-sm uppercase tracking-[0.2em] text-yellow-300">
+              Koniec meczu
+            </p>
+            <p className="mt-2 text-3xl font-black text-yellow-400">
+              🏆 {playerBySeat(view.winnerSeat)?.name}
+            </p>
+            <p className="mt-1 text-gray-300">
+              wygrywa z wynikiem {playerBySeat(view.winnerSeat)?.matchScore}
+            </p>
+
+            <div className="mt-4 space-y-1">
+              {[...view.players]
+                .sort((a, b) => b.matchScore - a.matchScore)
+                .map((player) => (
+                  <p key={player.seat} className="text-gray-200">
+                    {player.name}: {player.matchScore}
+                  </p>
+                ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => newMatch(code)}
+              className="mt-6 rounded-lg bg-yellow-500 px-6 py-3 font-bold text-black transition hover:bg-yellow-400"
+            >
+              Nowy mecz
             </button>
           </div>
         )}
@@ -398,6 +473,8 @@ export function GameBoard({code, roomName}: GameBoardProps) {
                 : "Wymiana musika…"
               : view.phase === "roundOver"
               ? "Rozdanie zakończone"
+              : view.phase === "matchOver"
+              ? "Koniec meczu"
               : isMyTurn
               ? "Twoja tura — zagraj kartę"
               : `Tura: ${currentName}`}

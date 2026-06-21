@@ -8,6 +8,7 @@ import type {
   GamePhase,
   GameView,
   PlayedCard,
+  RoundResult,
   Seat,
 } from "../src/games/tysiac/types/game";
 import type {Room} from "../src/features/rooms/types";
@@ -43,6 +44,10 @@ type Game = {
   lastTrick: {winnerSeat: Seat; points: number} | null;
   trump: Suit | null;
   lastMeld: {seat: Seat; suit: Suit; points: number} | null;
+  // mecz
+  matchScores: Record<Seat, number>;
+  roundResult: RoundResult | null;
+  winnerSeat: Seat | null;
 };
 
 const games = new Map<string, Game>();
@@ -51,6 +56,8 @@ const TOTAL_TRICKS = 8;
 const MIN_BID = 100;
 const BID_STEP = 10;
 const MAX_BID = 300;
+const TARGET = 1000;
+const BARREL = 880;
 
 const MARRIAGE: Record<Suit, number> = {
   hearts: 100,
@@ -114,6 +121,9 @@ export function startGame(room: Room): Game {
     lastTrick: null,
     trump: null,
     lastMeld: null,
+    matchScores: {1: 0, 2: 0, 3: 0},
+    roundResult: null,
+    winnerSeat: null,
   };
 
   games.set(room.code, game);
@@ -353,6 +363,94 @@ export function playCard(code: string, seat: Seat, cardId: string): boolean {
   return true;
 }
 
+function roundToTen(value: number): number {
+  return Math.round(value / 10) * 10;
+}
+
+/**
+ * Czysta funkcja rozliczenia rozdania (\u0142atwa do testowania):
+ * - graj\u0105cy: +kontrakt je\u015bli zdoby\u0142 \u2265 kontrakt, w przeciwnym razie -kontrakt,
+ * - obro\u0144cy: punkty z rozdania zaokr\u0105glone do 10,
+ * - beczka 880: obro\u0144ca nie przekracza 880 z obrony,
+ * - wygrana: graj\u0105cy osi\u0105ga \u2265 1000.
+ */
+export function computeRoundScoring(params: {
+  matchScores: Record<Seat, number>;
+  declarerSeat: Seat;
+  contract: number;
+  roundPoints: Record<Seat, number>;
+}): {
+  rows: RoundResult["rows"];
+  matchScores: Record<Seat, number>;
+  winnerSeat: Seat | null;
+} {
+  const nextScores: Record<Seat, number> = {...params.matchScores};
+
+  const rows: RoundResult["rows"] = SEATS.map((seat) => {
+    const roundPoints = params.roundPoints[seat];
+    const isDeclarer = seat === params.declarerSeat;
+
+    let delta: number;
+    let made: boolean | null = null;
+
+    if (isDeclarer) {
+      made = roundPoints >= params.contract;
+      delta = made ? params.contract : -params.contract;
+    } else {
+      delta = roundToTen(roundPoints);
+    }
+
+    const current = params.matchScores[seat];
+    let total: number;
+
+    if (isDeclarer) {
+      total = current + delta;
+    } else if (current >= BARREL) {
+      total = current;
+    } else {
+      total = Math.min(current + delta, BARREL);
+    }
+
+    nextScores[seat] = total;
+    return {seat, roundPoints, delta, total, isDeclarer, made};
+  });
+
+  const winnerSeat =
+    nextScores[params.declarerSeat] >= TARGET ? params.declarerSeat : null;
+
+  return {rows, matchScores: nextScores, winnerSeat};
+}
+
+function scoreRound(game: Game) {
+  if (game.declarerSeat === null) {
+    game.phase = "roundOver";
+    return;
+  }
+
+  const roundPoints: Record<Seat, number> = {
+    1: playerBySeat(game, 1).trickPoints,
+    2: playerBySeat(game, 2).trickPoints,
+    3: playerBySeat(game, 3).trickPoints,
+  };
+
+  const result = computeRoundScoring({
+    matchScores: game.matchScores,
+    declarerSeat: game.declarerSeat,
+    contract: game.contractValue ?? 0,
+    roundPoints,
+  });
+
+  game.matchScores = result.matchScores;
+  game.roundResult = {rows: result.rows};
+
+  if (result.winnerSeat !== null) {
+    game.winnerSeat = result.winnerSeat;
+    game.phase = "matchOver";
+  } else {
+    game.phase = "roundOver";
+  }
+}
+
 export function finalizeTrick(code: string): boolean {
   const game = getGame(code);
   if (!game || game.phase !== "trickComplete" || !game.lastTrick) return false;
@@ -366,7 +464,12 @@ export function finalizeTrick(code: string): boolean {
   game.currentTurnSeat = game.lastTrick.winnerSeat;
   game.lastMeld = null;
 
-  game.phase = game.trickCount >= TOTAL_TRICKS ? "roundOver" : "playing";
+  if (game.trickCount >= TOTAL_TRICKS) {
+    scoreRound(game);
+  } else {
+    game.phase = "playing";
+  }
+
   return true;
 }
 
@@ -406,10 +509,7 @@ export function botPlay(code: string): boolean {
   return playCard(code, seat, choice.id);
 }
 
-export function startNewRound(code: string): boolean {
-  const game = getGame(code);
-  if (!game) return false;
-
+function setupRound(game: Game) {
   const hands = dealHands();
 
   for (const player of game.players) {
@@ -435,7 +535,24 @@ export function startNewRound(code: string): boolean {
   game.lastTrick = null;
   game.trump = null;
   game.lastMeld = null;
+  game.roundResult = null;
+}
 
+export function startNewRound(code: string): boolean {
+  const game = getGame(code);
+  if (!game || game.phase !== "roundOver") return false;
+
+  setupRound(game);
+  return true;
+}
+
+export function startNewMatch(code: string): boolean {
+  const game = getGame(code);
+  if (!game || game.phase !== "matchOver") return false;
+
+  game.matchScores = {1: 0, 2: 0, 3: 0};
+  game.winnerSeat = null;
+  setupRound(game);
   return true;
 }
 
@@ -498,6 +615,9 @@ export function buildView(code: string, viewerId?: string): GameView | null {
             })),
           }
         : null,
+    roundResult: game.roundResult,
+    winnerSeat: game.winnerSeat,
+    target: TARGET,
     players: game.players.map((player) => ({
       id: player.id,
       name: player.name,
@@ -505,6 +625,8 @@ export function buildView(code: string, viewerId?: string): GameView | null {
       isBot: player.isBot,
       handCount: player.hand.length,
       trickPoints: player.trickPoints,
+      matchScore: game.matchScores[player.seat],
+      onBarrel: game.matchScores[player.seat] >= BARREL,
       hasPassed: game.passed.includes(player.seat),
     })),
     you:

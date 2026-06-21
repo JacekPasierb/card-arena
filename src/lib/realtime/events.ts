@@ -96,4 +96,8 @@ export interface ClientToServerEvents {
     payload: GameCodePayload,
     ack: (response: Ack<true>) => void
   ) => void;
+  "game:newMatch": (
+    payload: GameCodePayload,
+    ack: (response: Ack<true>) => void
+  ) => void;
 }

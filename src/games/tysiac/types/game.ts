@@ -12,7 +12,8 @@ export type GamePhase =
   | "musik"
   | "playing"
   | "trickComplete"
-  | "roundOver";
+  | "roundOver"
+  | "matchOver";
 
 export type GamePublicPlayer = {
   id: string;
@@ -21,7 +22,22 @@ export type GamePublicPlayer = {
   isBot: boolean;
   handCount: number;
   trickPoints: number;
+  matchScore: number;
+  onBarrel: boolean;
   hasPassed: boolean;
+};
+
+export type RoundResultRow = {
+  seat: Seat;
+  roundPoints: number;
+  delta: number;
+  total: number;
+  isDeclarer: boolean;
+  made: boolean | null;
+};
+
+export type RoundResult = {
+  rows: RoundResultRow[];
 };
 
 export type GameViewer = {
@@ -64,6 +80,9 @@ export type GameView = {
   contract: {declarerSeat: Seat; value: number} | null;
   bidding: BiddingView | null;
   musik: MusikView | null;
+  roundResult: RoundResult | null;
+  winnerSeat: Seat | null;
+  target: number;
   players: GamePublicPlayer[];
   you: GameViewer | null;
 };

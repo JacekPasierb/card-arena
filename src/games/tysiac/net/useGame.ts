@@ -73,3 +73,11 @@ export function newRound(code: string): Promise<void> {
     );
   });
 }
+
+export function newMatch(code: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    getSocket().emit("game:newMatch", {code: code.toUpperCase()}, (response) =>
+      response.ok ? resolve() : reject(new Error(response.error))
+    );
+  });
+}

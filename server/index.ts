@@ -29,6 +29,7 @@ import {
   playCard,
   removeGame,
   startGame,
+  startNewMatch,
   startNewRound,
 } from "./gameManager";
 import type {Seat} from "../src/games/tysiac/types/game";
@@ -272,7 +273,19 @@ io.on("connection", (socket) => {
     const normalized = code.toUpperCase();
 
     if (!startNewRound(normalized)) {
-      ack({ok: false, error: "Gra nie istnieje."});
+      ack({ok: false, error: "Nie można rozpocząć nowego rozdania."});
+      return;
+    }
+
+    ack({ok: true, data: true});
+    void advance(normalized);
+  });
+
+  socket.on("game:newMatch", ({code}, ack) => {
+    const normalized = code.toUpperCase();
+
+    if (!startNewMatch(normalized)) {
+      ack({ok: false, error: "Nie można rozpocząć nowego meczu."});
       return;
     }
 
