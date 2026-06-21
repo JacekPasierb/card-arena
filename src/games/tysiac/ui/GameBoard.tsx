@@ -310,26 +310,9 @@ export function GameBoard({code, roomName}: GameBoardProps) {
               <div className="mt-5">
                 <p className="text-sm text-gray-300">
                   {selectedGive
-                    ? "Wybierz gracza, któremu oddasz kartę:"
-                    : `Wybierz kartę z ręki do oddania (pozostało: ${view.musik.needGive}).`}
+                    ? "Wskaż gracza na pasku nad Twoimi kartami."
+                    : `Kliknij kartę z ręki, którą chcesz oddać (pozostało: ${view.musik.needGive}).`}
                 </p>
-
-                {selectedGive && (
-                  <div className="mt-3 flex justify-center gap-3">
-                    {view.musik.opponents.map((opponent) => (
-                      <button
-                        key={opponent.seat}
-                        type="button"
-                        disabled={opponent.received}
-                        onClick={() => handleGive(opponent.seat)}
-                        className="rounded-lg bg-emerald-700 px-4 py-2 font-bold transition hover:bg-emerald-600 disabled:opacity-40"
-                      >
-                        {opponent.name}
-                        {opponent.received ? " ✓" : ""}
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
             ) : (
               <p className="mt-5 text-sm text-emerald-300">
@@ -456,6 +439,35 @@ export function GameBoard({code, roomName}: GameBoardProps) {
         )}
 
         {/* R\u0119ka gracza */}
+        {isDeclarer && selectedGive && view.musik && (
+          <div className="absolute bottom-[19rem] left-1/2 z-50 -translate-x-1/2 rounded-2xl border-2 border-yellow-400 bg-black/90 px-6 py-4 text-center shadow-2xl">
+            <p className="mb-3 text-sm font-semibold text-yellow-200">
+              Komu oddać wybraną kartę?
+            </p>
+            <div className="flex justify-center gap-3">
+              {view.musik.opponents.map((opponent) => (
+                <button
+                  key={opponent.seat}
+                  type="button"
+                  disabled={opponent.received}
+                  onClick={() => handleGive(opponent.seat)}
+                  className="rounded-lg bg-emerald-600 px-5 py-2 font-bold transition hover:bg-emerald-500 disabled:opacity-40"
+                >
+                  {opponent.name}
+                  {opponent.received ? " ✓" : ""}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedGive(null)}
+              className="mt-3 text-xs text-gray-400 underline hover:text-gray-200"
+            >
+              Anuluj wybór
+            </button>
+          </div>
+        )}
+
         <div className="absolute bottom-28 left-1/2 -translate-x-1/2">
           <div
             className={`mb-4 w-fit rounded-xl border px-6 py-2 ${
