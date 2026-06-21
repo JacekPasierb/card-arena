@@ -41,8 +41,18 @@ type SocketData = {
   playerId?: string;
 };
 
-const PORT = Number(process.env.SOCKET_PORT ?? 3001);
-const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN ?? "http://localhost:3000";
+// Render wstrzykuje PORT; lokalnie u\u017cywamy SOCKET_PORT albo 3001.
+const PORT = Number(process.env.PORT ?? process.env.SOCKET_PORT ?? 3001);
+
+// Dozwolone domeny frontu (oddzielone przecinkami w CLIENT_ORIGIN),
+// np. "https://card-arena.netlify.app". Lokalny dev jest zawsze dozwolony.
+const ALLOWED_ORIGINS = [
+  "http://localhost:3000",
+  ...(process.env.CLIENT_ORIGIN ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+];
 
 const httpServer = createServer((_req, res) => {
   res.writeHead(200, {"Content-Type": "text/plain"});
@@ -55,7 +65,7 @@ const io = new Server<
   Record<string, never>,
   SocketData
 >(httpServer, {
-  cors: {origin: CLIENT_ORIGIN, methods: ["GET", "POST"]},
+  cors: {origin: ALLOWED_ORIGINS, methods: ["GET", "POST"]},
 });
 
 function roomChannel(code: string) {
@@ -341,6 +351,6 @@ io.on("connection", (socket) => {
 });
 
 httpServer.listen(PORT, () => {
-  console.log(`> Socket.IO nasłuchuje na http://localhost:${PORT}`);
-  console.log(`> Dozwolony origin klienta: ${CLIENT_ORIGIN}`);
+  console.log(`> Socket.IO nasłuchuje na porcie ${PORT}`);
+  console.log(`> Dozwolone originy klienta: ${ALLOWED_ORIGINS.join(", ")}`);
 });

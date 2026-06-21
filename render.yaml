@@ -1,0 +1,14 @@
+# Render Blueprint dla serwera gry Socket.IO (Card Arena).
+# Frontend (Next.js) hostowany osobno na Netlify/Vercel.
+services:
+  - type: web
+    name: card-arena-server
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm run start:socket
+    healthCheckPath: /
+    envVars:
+      # Domeny frontu (przecinkami), np. https://card-arena.netlify.app
+      - key: CLIENT_ORIGIN
+        sync: false

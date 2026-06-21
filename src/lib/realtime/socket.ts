@@ -14,7 +14,8 @@ export function getSocket(): AppSocket {
 
     socket = io(url, {
       autoConnect: true,
-      transports: ["websocket"],
+      // websocket jako główny transport, polling jako zapas (proxy Render itp.).
+      transports: ["websocket", "polling"],
     });
   }
 
