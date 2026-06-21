@@ -37,6 +37,35 @@ export function playCard(code: string, cardId: string): Promise<void> {
   });
 }
 
+export function placeBid(
+  code: string,
+  action: "raise" | "pass"
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    getSocket().emit(
+      "game:bid",
+      {code: code.toUpperCase(), action},
+      (response) =>
+        response.ok ? resolve() : reject(new Error(response.error))
+    );
+  });
+}
+
+export function giveCard(
+  code: string,
+  cardId: string,
+  targetSeat: 1 | 2 | 3
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    getSocket().emit(
+      "game:give",
+      {code: code.toUpperCase(), cardId, targetSeat},
+      (response) =>
+        response.ok ? resolve() : reject(new Error(response.error))
+    );
+  });
+}
+
 export function newRound(code: string): Promise<void> {
   return new Promise((resolve, reject) => {
     getSocket().emit("game:newRound", {code: code.toUpperCase()}, (response) =>

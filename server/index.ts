@@ -14,12 +14,18 @@ import {
   startRoom,
 } from "./roomManager";
 import {
+  botBid,
+  botGive,
   botPlay,
   buildView,
   convertPlayerToBot,
   finalizeTrick,
   getGame,
-  isBotTurn,
+  giveCard,
+  isBotBidTurn,
+  isBotMusikTurn,
+  isBotPlayTurn,
+  placeBid,
   playCard,
   removeGame,
   startGame,
@@ -82,7 +88,7 @@ async function advance(code: string) {
   const game = getGame(code);
   if (!game) return;
 
-  if (game.status === "trickComplete") {
+  if (game.phase === "trickComplete") {
     setTimeout(() => {
       finalizeTrick(code);
       void advance(code);
@@ -90,7 +96,23 @@ async function advance(code: string) {
     return;
   }
 
-  if (isBotTurn(game)) {
+  if (isBotBidTurn(game)) {
+    setTimeout(() => {
+      botBid(code);
+      void advance(code);
+    }, BOT_DELAY_MS);
+    return;
+  }
+
+  if (isBotMusikTurn(game)) {
+    setTimeout(() => {
+      botGive(code);
+      void advance(code);
+    }, BOT_DELAY_MS);
+    return;
+  }
+
+  if (isBotPlayTurn(game)) {
     setTimeout(() => {
       botPlay(code);
       void advance(code);
@@ -195,6 +217,50 @@ io.on("connection", (socket) => {
 
     if (!moved) {
       ack({ok: false, error: "Nieprawidłowe zagranie."});
+      return;
+    }
+
+    ack({ok: true, data: true});
+    void advance(normalized);
+  });
+
+  socket.on("game:bid", ({code, action}, ack) => {
+    const normalized = code.toUpperCase();
+    const game = getGame(normalized);
+
+    const player = game?.players.find(
+      (current) => current.id === socket.data.playerId
+    );
+
+    if (!game || !player) {
+      ack({ok: false, error: "Nie jesteś graczem przy tym stole."});
+      return;
+    }
+
+    if (!placeBid(normalized, player.seat as Seat, action)) {
+      ack({ok: false, error: "Nieprawidłowa licytacja."});
+      return;
+    }
+
+    ack({ok: true, data: true});
+    void advance(normalized);
+  });
+
+  socket.on("game:give", ({code, cardId, targetSeat}, ack) => {
+    const normalized = code.toUpperCase();
+    const game = getGame(normalized);
+
+    const player = game?.players.find(
+      (current) => current.id === socket.data.playerId
+    );
+
+    if (!game || !player) {
+      ack({ok: false, error: "Nie jesteś graczem przy tym stole."});
+      return;
+    }
+
+    if (!giveCard(normalized, player.seat as Seat, cardId, targetSeat as Seat)) {
+      ack({ok: false, error: "Nie można oddać tej karty."});
       return;
     }
 

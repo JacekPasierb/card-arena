@@ -38,6 +38,17 @@ export type GameCodePayload = {
   code: string;
 };
 
+export type BidPayload = {
+  code: string;
+  action: "raise" | "pass";
+};
+
+export type GiveCardPayload = {
+  code: string;
+  cardId: string;
+  targetSeat: 1 | 2 | 3;
+};
+
 export interface ServerToClientEvents {
   "rooms:update": (rooms: Room[]) => void;
   "room:update": (room: Room) => void;
@@ -71,6 +82,14 @@ export interface ClientToServerEvents {
   ) => void;
   "game:play": (
     payload: PlayCardPayload,
+    ack: (response: Ack<true>) => void
+  ) => void;
+  "game:bid": (
+    payload: BidPayload,
+    ack: (response: Ack<true>) => void
+  ) => void;
+  "game:give": (
+    payload: GiveCardPayload,
     ack: (response: Ack<true>) => void
   ) => void;
   "game:newRound": (

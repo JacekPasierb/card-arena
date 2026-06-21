@@ -3,8 +3,9 @@ import {dealCards} from "../src/games/tysiac/engine/dealCards";
 import {getTrickWinner} from "../src/games/tysiac/engine/getTrickWinner";
 import {isCardAllowed} from "../src/games/tysiac/engine/isCardAllowed";
 import {shuffleDeck} from "../src/games/tysiac/engine/shuffleDeck";
-import type {Card} from "../src/games/tysiac/types/card";
+import type {Card, Suit} from "../src/games/tysiac/types/card";
 import type {
+  GamePhase,
   GameView,
   PlayedCard,
   Seat,
@@ -23,37 +24,54 @@ type InternalPlayer = {
 type Game = {
   code: string;
   players: InternalPlayer[];
+  phase: GamePhase;
+  // licytacja
+  currentBid: number;
+  highestSeat: Seat;
+  bidTurnSeat: Seat;
+  passed: Seat[];
+  // musik
+  musikCards: Card[];
+  declarerSeat: Seat | null;
+  contractValue: number | null;
+  given: Seat[];
+  // rozgrywka
   table: PlayedCard[];
   currentTurnSeat: Seat;
   leadSeat: Seat;
   trickCount: number;
-  status: "playing" | "trickComplete" | "roundOver";
   lastTrick: {winnerSeat: Seat; points: number} | null;
 };
 
 const games = new Map<string, Game>();
 const SEATS: Seat[] = [1, 2, 3];
-const TOTAL_TRICKS = 7;
+const TOTAL_TRICKS = 8;
+const MIN_BID = 100;
+const BID_STEP = 10;
+const MAX_BID = 300;
+
+const MARRIAGE: Record<Suit, number> = {
+  hearts: 100,
+  diamonds: 80,
+  clubs: 60,
+  spades: 40,
+};
 
 function nextSeat(seat: Seat): Seat {
   return ((seat % 3) + 1) as Seat;
 }
 
-function handForSeat(
-  seat: Seat,
-  dealt: ReturnType<typeof dealCards>
-): Card[] {
-  if (seat === 1) return dealt.playerOne;
-  if (seat === 2) return dealt.playerTwo;
-  return dealt.playerThree;
+function opponentsOf(seat: Seat): Seat[] {
+  return SEATS.filter((current) => current !== seat);
 }
 
-function dealHands(): Record<Seat, Card[]> {
+function dealHands() {
   const dealt = dealCards(shuffleDeck(createDeck()));
   return {
-    1: handForSeat(1, dealt),
-    2: handForSeat(2, dealt),
-    3: handForSeat(3, dealt),
+    1: dealt.playerOne,
+    2: dealt.playerTwo,
+    3: dealt.playerThree,
+    musik: dealt.kitty,
   };
 }
 
@@ -73,16 +91,24 @@ export function startGame(room: Room): Game {
     };
   });
 
-  const leadSeat = SEATS[Math.floor(Math.random() * SEATS.length)];
+  const opener = SEATS[Math.floor(Math.random() * SEATS.length)];
 
   const game: Game = {
     code: room.code,
     players,
+    phase: "bidding",
+    currentBid: MIN_BID,
+    highestSeat: opener,
+    bidTurnSeat: nextSeat(opener),
+    passed: [],
+    musikCards: hands.musik,
+    declarerSeat: null,
+    contractValue: null,
+    given: [],
     table: [],
-    currentTurnSeat: leadSeat,
-    leadSeat,
+    currentTurnSeat: opener,
+    leadSeat: opener,
     trickCount: 0,
-    status: "playing",
     lastTrick: null,
   };
 
@@ -102,8 +128,154 @@ function playerBySeat(game: Game, seat: Seat): InternalPlayer {
   return game.players.find((player) => player.seat === seat)!;
 }
 
+function activeSeats(game: Game): Seat[] {
+  return SEATS.filter((seat) => !game.passed.includes(seat));
+}
+
+function nextActiveSeat(game: Game, from: Seat): Seat {
+  let seat = nextSeat(from);
+  while (game.passed.includes(seat)) {
+    seat = nextSeat(seat);
+  }
+  return seat;
+}
+
+function handStrength(hand: Card[]): number {
+  const points = hand.reduce((total, card) => total + card.points, 0);
+
+  let marriages = 0;
+  for (const suit of Object.keys(MARRIAGE) as Suit[]) {
+    const hasKing = hand.some((card) => card.suit === suit && card.rank === "K");
+    const hasQueen = hand.some(
+      (card) => card.suit === suit && card.rank === "Q"
+    );
+    if (hasKing && hasQueen) marriages += MARRIAGE[suit];
+  }
+
+  return points + marriages;
+}
+
+// ---- Licytacja ----
+
+function finalizeBidding(game: Game) {
+  const declarer = playerBySeat(game, game.highestSeat);
+
+  game.declarerSeat = declarer.seat;
+  game.contractValue = game.currentBid;
+  game.phase = "musik";
+  game.given = [];
+
+  declarer.hand = [...declarer.hand, ...game.musikCards];
+}
+
+export function placeBid(
+  code: string,
+  seat: Seat,
+  action: "raise" | "pass"
+): boolean {
+  const game = getGame(code);
+  if (!game || game.phase !== "bidding") return false;
+  if (game.bidTurnSeat !== seat || game.passed.includes(seat)) return false;
+
+  if (action === "pass") {
+    game.passed.push(seat);
+
+    if (activeSeats(game).length === 1) {
+      finalizeBidding(game);
+    } else {
+      game.bidTurnSeat = nextActiveSeat(game, seat);
+    }
+
+    return true;
+  }
+
+  if (game.currentBid + BID_STEP > MAX_BID) return false;
+
+  game.currentBid += BID_STEP;
+  game.highestSeat = seat;
+  game.bidTurnSeat = nextActiveSeat(game, seat);
+  return true;
+}
+
+export function isBotBidTurn(game: Game): boolean {
+  return game.phase === "bidding" && playerBySeat(game, game.bidTurnSeat).isBot;
+}
+
+export function botBid(code: string): boolean {
+  const game = getGame(code);
+  if (!game || !isBotBidTurn(game)) return false;
+
+  const seat = game.bidTurnSeat;
+  const strength = handStrength(playerBySeat(game, seat).hand);
+  const target = Math.min(strength, 120);
+
+  const action: "raise" | "pass" =
+    game.currentBid + BID_STEP <= target ? "raise" : "pass";
+
+  return placeBid(code, seat, action);
+}
+
+// ---- Musik ----
+
+export function giveCard(
+  code: string,
+  seat: Seat,
+  cardId: string,
+  targetSeat: Seat
+): boolean {
+  const game = getGame(code);
+  if (!game || game.phase !== "musik") return false;
+  if (game.declarerSeat !== seat) return false;
+  if (targetSeat === seat || game.given.includes(targetSeat)) return false;
+
+  const declarer = playerBySeat(game, seat);
+  const card = declarer.hand.find((current) => current.id === cardId);
+  if (!card) return false;
+
+  declarer.hand = declarer.hand.filter((current) => current.id !== cardId);
+  playerBySeat(game, targetSeat).hand.push(card);
+  game.given.push(targetSeat);
+
+  if (game.given.length === 2) {
+    game.phase = "playing";
+    game.leadSeat = seat;
+    game.currentTurnSeat = seat;
+  }
+
+  return true;
+}
+
+export function isBotMusikTurn(game: Game): boolean {
+  return (
+    game.phase === "musik" &&
+    game.declarerSeat !== null &&
+    playerBySeat(game, game.declarerSeat).isBot &&
+    game.given.length < 2
+  );
+}
+
+export function botGive(code: string): boolean {
+  const game = getGame(code);
+  if (!game || !isBotMusikTurn(game) || game.declarerSeat === null) {
+    return false;
+  }
+
+  const declarer = playerBySeat(game, game.declarerSeat);
+  const target = opponentsOf(game.declarerSeat).find(
+    (seat) => !game.given.includes(seat)
+  );
+  if (target === undefined) return false;
+
+  const cheapest = [...declarer.hand].sort((a, b) => a.points - b.points)[0];
+  if (!cheapest) return false;
+
+  return giveCard(game.code, game.declarerSeat, cheapest.id, target);
+}
+
+// ---- Rozgrywka ----
+
 function allowedCardIds(game: Game, seat: Seat): string[] {
-  if (game.status !== "playing" || game.currentTurnSeat !== seat) return [];
+  if (game.phase !== "playing" || game.currentTurnSeat !== seat) return [];
 
   const player = playerBySeat(game, seat);
   const leadCard = game.table[0]?.card;
@@ -113,23 +285,20 @@ function allowedCardIds(game: Game, seat: Seat): string[] {
     .map((card) => card.id);
 }
 
-export function isBotTurn(game: Game): boolean {
+export function isBotPlayTurn(game: Game): boolean {
   return (
-    game.status === "playing" &&
+    game.phase === "playing" &&
     playerBySeat(game, game.currentTurnSeat).isBot
   );
 }
 
-/** Wykonuje zagranie karty przez gracza na danym miejscu. Zwraca true je\u015bli ruch by\u0142 prawid\u0142owy. */
 export function playCard(code: string, seat: Seat, cardId: string): boolean {
   const game = getGame(code);
-
-  if (!game || game.status !== "playing") return false;
+  if (!game || game.phase !== "playing") return false;
   if (game.currentTurnSeat !== seat) return false;
 
   const player = playerBySeat(game, seat);
   const card = player.hand.find((current) => current.id === cardId);
-
   if (!card) return false;
 
   const leadCard = game.table[0]?.card;
@@ -143,7 +312,6 @@ export function playCard(code: string, seat: Seat, cardId: string): boolean {
     return true;
   }
 
-  // Lewa kompletna \u2014 wyznaczamy zwyci\u0119zc\u0119, ale zostawiamy karty na stole.
   const winnerCard = getTrickWinner(game.table.map((entry) => entry.card));
   const winnerEntry = game.table.find(
     (entry) => entry.card.id === winnerCard?.id
@@ -157,32 +325,29 @@ export function playCard(code: string, seat: Seat, cardId: string): boolean {
     game.lastTrick = {winnerSeat: winnerEntry.seat, points};
   }
 
-  game.status = "trickComplete";
+  game.phase = "trickComplete";
   return true;
 }
 
-/** Finalizuje lew\u0119: przyznaje punkty, czy\u015bci st\u00f3\u0142 i ustawia kolejn\u0105 tur\u0119. */
 export function finalizeTrick(code: string): boolean {
   const game = getGame(code);
-  if (!game || game.status !== "trickComplete" || !game.lastTrick) return false;
+  if (!game || game.phase !== "trickComplete" || !game.lastTrick) return false;
 
-  const winnerSeat = game.lastTrick.winnerSeat;
-  const winner = playerBySeat(game, winnerSeat);
+  const winner = playerBySeat(game, game.lastTrick.winnerSeat);
   winner.trickPoints += game.lastTrick.points;
 
   game.table = [];
   game.trickCount += 1;
-  game.leadSeat = winnerSeat;
-  game.currentTurnSeat = winnerSeat;
+  game.leadSeat = game.lastTrick.winnerSeat;
+  game.currentTurnSeat = game.lastTrick.winnerSeat;
 
-  game.status = game.trickCount >= TOTAL_TRICKS ? "roundOver" : "playing";
+  game.phase = game.trickCount >= TOTAL_TRICKS ? "roundOver" : "playing";
   return true;
 }
 
-/** Ruch bota na aktualnym miejscu. Zwraca true je\u015bli zagra\u0142. */
 export function botPlay(code: string): boolean {
   const game = getGame(code);
-  if (!game || !isBotTurn(game)) return false;
+  if (!game || !isBotPlayTurn(game)) return false;
 
   const seat = game.currentTurnSeat;
   const player = playerBySeat(game, seat);
@@ -192,7 +357,6 @@ export function botPlay(code: string): boolean {
     isCardAllowed(card, player.hand, leadCard)
   );
   const choice = allowed[0] ?? player.hand[0];
-
   if (!choice) return false;
 
   return playCard(code, seat, choice.id);
@@ -209,17 +373,26 @@ export function startNewRound(code: string): boolean {
     player.trickPoints = 0;
   }
 
+  const opener = nextSeat(game.leadSeat);
+
+  game.phase = "bidding";
+  game.currentBid = MIN_BID;
+  game.highestSeat = opener;
+  game.bidTurnSeat = nextSeat(opener);
+  game.passed = [];
+  game.musikCards = hands.musik;
+  game.declarerSeat = null;
+  game.contractValue = null;
+  game.given = [];
   game.table = [];
+  game.currentTurnSeat = opener;
+  game.leadSeat = opener;
   game.trickCount = 0;
   game.lastTrick = null;
-  game.status = "playing";
-  game.leadSeat = nextSeat(game.leadSeat);
-  game.currentTurnSeat = game.leadSeat;
 
   return true;
 }
 
-/** Zamienia roz\u0142\u0105czonego gracza w bota, aby gra mog\u0142a si\u0119 toczy\u0107 dalej. */
 export function convertPlayerToBot(playerId: string): string[] {
   const affected: string[] = [];
 
@@ -243,13 +416,40 @@ export function buildView(code: string, viewerId?: string): GameView | null {
     : undefined;
 
   return {
-    status: game.status,
+    phase: game.phase,
     currentTurnSeat: game.currentTurnSeat,
     leadSeat: game.leadSeat,
     table: game.table,
     trickCount: game.trickCount,
     totalTricks: TOTAL_TRICKS,
     lastTrick: game.lastTrick,
+    contract:
+      game.declarerSeat !== null && game.contractValue !== null
+        ? {declarerSeat: game.declarerSeat, value: game.contractValue}
+        : null,
+    bidding:
+      game.phase === "bidding"
+        ? {
+            currentBid: game.currentBid,
+            highestSeat: game.highestSeat,
+            turnSeat: game.bidTurnSeat,
+            maxBid: MAX_BID,
+          }
+        : null,
+    musik:
+      game.phase === "musik" && game.declarerSeat !== null
+        ? {
+            declarerSeat: game.declarerSeat,
+            contract: game.contractValue ?? game.currentBid,
+            cards: game.musikCards,
+            needGive: 2 - game.given.length,
+            opponents: opponentsOf(game.declarerSeat).map((seat) => ({
+              seat,
+              name: playerBySeat(game, seat).name,
+              received: game.given.includes(seat),
+            })),
+          }
+        : null,
     players: game.players.map((player) => ({
       id: player.id,
       name: player.name,
@@ -257,6 +457,7 @@ export function buildView(code: string, viewerId?: string): GameView | null {
       isBot: player.isBot,
       handCount: player.hand.length,
       trickPoints: player.trickPoints,
+      hasPassed: game.passed.includes(player.seat),
     })),
     you:
       viewer && !viewer.isBot
